@@ -60,11 +60,12 @@ def check_stock():
             shop_id = shop['id']
             # 通知済みリストにIDがなければ通知
             if shop_id not in new_history:
-                # ここでURLを作成します
+                # 商品名を取得（APIから取得したデータ内の product_name を参照）
+                product_name = data.get("product_name", "不明な商品")
+                # URLを修正（shop_codeを使用）
                 shop_url = f"https://gashapon.jp/shop/shop.php?shop_code={shop['shop_code']}"
-                msg = f"🔔 【入荷検知】\n店舗: {shop['shop_title']}\n住所: {shop['shop_address']}\n詳細URL: {shop_url}"
+                msg = f"🔔 【入荷検知】\n商品: {product_name}\n店舗: {shop['shop_title']}\n住所: {shop['shop_address']}\n詳細URL: {shop_url}"
                 res = requests.post(DISCORD_WEBHOOK_URL, json={"content": msg})
-                
                 if res.status_code in [200, 204]:
                     new_history.append(shop_id)
                     found_new = True
