@@ -4,7 +4,7 @@ import os
 
 # --- 設定項目 ---
 # DiscordのWebhook URLをここに貼り付けてください
-DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1522588598900097054/4UuDbR4ftKna_JCXA3vU9utM9_b3OoClQHl5aDlkFYywDxti9vxBVwITt31jGg0wZ2cD"
+DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 
 API_URL = "https://gashapon.jp/shop/leaflet/getShopProducts.php"
 PAYLOAD = {
