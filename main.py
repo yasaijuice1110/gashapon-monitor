@@ -61,7 +61,7 @@ def check_stock():
             # 通知済みリストにIDがなければ通知
             if shop_id not in new_history:
                 # ここでURLを作成します
-                shop_url = f"https://gashapon.jp/shop/leaflet/shop_detail.php?shop_id={shop_id}"
+                shop_url = f"https://gashapon.jp/shop/shop.php?shop_code={shop['shop_code']}"
                 msg = f"🔔 【入荷検知】\n店舗: {shop['shop_title']}\n住所: {shop['shop_address']}\n詳細URL: {shop_url}"
                 res = requests.post(DISCORD_WEBHOOK_URL, json={"content": msg})
                 
