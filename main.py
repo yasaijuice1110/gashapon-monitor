@@ -3,6 +3,8 @@ import json
 import os
 
 # --- 設定項目 ---
+# 商品名を固定で設定します
+PRODUCT_NAME = "サンリオキャラクターズ 手作りおやつチャーム ＃アイシングクッキー＆パッケージ"
 # DiscordのWebhook URLをここに貼り付けてください
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 
