@@ -19,7 +19,7 @@ PAYLOAD = {
     "map_distance_flg": "false"
 }
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/126.0.0.0",
     "Referer": "https://gashapon.jp/products/detail.php?jan_code=4570118186782000"
 }
 HISTORY_FILE = "notified_shops.json"
@@ -59,34 +59,44 @@ def check_stock():
         data = response.json()
         shops = data.get("gplus_data", [])
         
+        # 今回の検索でヒットした、東京(13)・千葉(12)の店舗リスト
         current_stock_ids = [s['id'] for s in shops if s.get("shop_pref_code") in ["13", "12"]]
+        
+        # 履歴を読み込み
         notified_list = load_history()
         
+        # 【重要】今回リストにいない店舗は履歴から削除（在庫切れ＝通知済みを解除）
         new_history = [shop_id for shop_id in notified_list if shop_id in current_stock_ids]
         
-        found_new = False
+        new_items = [] # 新着店舗を保存するリスト
+        
+        # 全店舗をチェック
         for shop in shops:
             if shop.get("shop_pref_code") not in ["13", "12"]:
                 continue
             
             shop_id = shop['id']
+            # 通知済みリストにIDがなければ通知対象
             if shop_id not in new_history:
                 shop_url = f"https://gashapon.jp/shop/shop.php?shop_code={shop['shop_code']}"
-                msg = f"🔔 【入荷検知】\n商品: {PRODUCT_NAME}\n店舗: {shop['shop_title']}\n住所: {shop['shop_address']}\n詳細URL: {shop_url}"
-                
-                # LINEへの送信
-                res = send_line_message(msg)
-                
-                if res.status_code == 200:
-                    new_history.append(shop_id)
-                    found_new = True
-                    print(f"通知送信: {shop['shop_title']}")
-                else:
-                    print(f"LINE通知失敗: {res.text}")
-        
-        save_history(new_history)
-        if not found_new:
+                item_msg = f"・{shop['shop_title']}\n  住所: {shop['shop_address']}\n  URL: {shop_url}"
+                new_items.append(item_msg)
+                new_history.append(shop_id) 
+
+        # 新着がある場合のみ、1通にまとめて送信
+        if len(new_items) > 0:
+            msg = f"🔔 【入荷検知】\n商品: {PRODUCT_NAME}\n\n" + "\n\n".join(new_items)
+            res = send_line_message(msg)
+            
+            if res.status_code == 200:
+                print(f"{len(new_items)}店舗の通知をまとめました。")
+            else:
+                print(f"LINE通知失敗: {res.text}")
+        else:
             print("新しい在庫変動は見つかりませんでした。")
+        
+        # 履歴を更新
+        save_history(new_history)
 
     except Exception as e:
         print(f"エラーが発生しました: {e}")
