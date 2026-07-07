@@ -118,5 +118,42 @@ def check_stock():
             save_history(current_history)
         print("変化はありませんでした。")
 
+# main.py の最下部をこのように修正
+
 if __name__ == "__main__":
-    check_stock()
+    import os
+    # GitHub Actionsの環境変数からモードを取得
+    mode = os.environ.get("RUN_MODE", "check")
+
+    if mode == "summary":
+        print("【サマリーモード】現在の全在庫を出力します...")
+        current_history = load_history()
+        
+        if not current_history:
+            send_line_message("現在、在庫がある店舗はありません。")
+        else:
+            # 商品ごとにデータを整理
+            summary_data = {}
+            for unique_id, info in current_history.items():
+                p_name = info["product_name"]
+                if p_name not in summary_data:
+                    summary_data[p_name] = []
+                shop_url = f"https://gashapon.jp/shop/shop.php?shop_code={info['shop_code']}"
+                summary_data[p_name].append(f"・{info['shop_title']}\n  {shop_url}")
+
+            # メッセージ構築
+            msg_lines = ["📋 【現在の在庫一覧サマリー】\n"]
+            for p_name, shops in summary_data.items():
+                msg_lines.append(f"📦 【{p_name}】")
+                msg_lines.extend(shops)
+                msg_lines.append("")
+
+            final_msg = "\n".join(msg_lines).strip()
+            if len(final_msg) > 4500:
+                final_msg = final_msg[:4500] + "\n\n※文字数制限のため省略"
+            
+            send_line_message(final_msg)
+            print("サマリーを送信しました。")
+    else:
+        # 通常の定期実行（変化チェック）
+        check_stock()
