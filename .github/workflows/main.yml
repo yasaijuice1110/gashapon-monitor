@@ -1,6 +1,12 @@
 name: Gashapon Monitor
 on:
   workflow_dispatch:
+    # ✨ 外部（GAS）からモードを切り替えられるように入力を定義します
+    inputs:
+      mode:
+        description: 'Execution mode'
+        required: false
+        default: 'check'
 
 jobs:
   build:
@@ -16,6 +22,8 @@ jobs:
         env:
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+          # ✨ GASから送られてきた「mode」を環境変数に渡す
+          RUN_MODE: ${{ github.event.inputs.mode }}
         run: python main.py
       - name: Commit and push changes
         run: |
