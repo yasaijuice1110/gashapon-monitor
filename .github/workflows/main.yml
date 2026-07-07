@@ -1,7 +1,5 @@
 name: Gashapon Monitor
 on:
-  schedule:
-    - cron: '5,34 * * * *' # 1時間おきに実行
   workflow_dispatch:
 
 jobs:
