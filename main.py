@@ -93,7 +93,7 @@ def check_stock():
     for product in TARGET_PRODUCTS:
         payload = {"product_code": product["code"], "center_lat": "35.6812", "center_lng": "139.7671", "gplus_type": "gplus", "map_distance_flg": "false"}
         try:
-            response = requests.post(API_URL, data=payload, headers=HEADERS)
+            response = requests.post(API_URL, data=payload, headers=HEADERS, timeout=180)
             data = response.json()
             shops = data.get("gplus_data", [])
             product_results[product["code"]] = shops
