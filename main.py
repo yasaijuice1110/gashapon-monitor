@@ -67,16 +67,14 @@ def send_line_message(msg):
     }
     return requests.post(url, headers=headers, json=payload)
 
-def check_target_product_changes():
-    """TARGET_PRODUCTS の追加・削除を検知してメッセージ用の配列を返す"""
+def get_target_product_changes():
+    """TARGET_PRODUCTS の追加・削除を検知してメッセージ用の配列を返す（保存はここではしない）"""
     old_tracked = load_tracked_products()
     current_tracked = {p["code"]: p["name"] for p in TARGET_PRODUCTS}
     
     change_messages = []
     
-    # 初回実行時（ファイルが存在しない時）は通知せず現在の状態を記録して終わる
     if not old_tracked:
-        save_tracked_products(current_tracked)
         return change_messages
     
     # 新しく追加された商品を検知
@@ -89,16 +87,9 @@ def check_target_product_changes():
         if code not in current_tracked:
             change_messages.append(f"➖ 【対象商品から外されました】\n・{name}")
             
-    # ✨ 変更があったら即時保存（通知が重複するのを防ぐ）
-    if change_messages:
-        save_tracked_products(current_tracked)
-        
     return change_messages
 
 def check_stock():
-    # まず商品の追加・削除の変化を取得
-    config_changes = check_target_product_changes()
-
     print("全商品をチェック中...")
     old_history = load_history()
     
@@ -151,9 +142,14 @@ def check_stock():
     # 4. メッセージの構築と送信
     messages_to_send = []
     
-    # ⚙️ 設定変更があれば、メッセージの「一番最初」についでに載せる
-    if len(config_changes) > 0:
-        messages_to_send.append("⚙️ 【システム設定の変更】\n\n" + "\n\n".join(config_changes))
+    # ✨ 入荷か完売が「1件以上」ある場合のみ、設定変更メッセージをチェックして合体させる
+    if len(all_new_items) > 0 or len(sold_out_items) > 0:
+        config_changes = get_target_product_changes()
+        if len(config_changes) > 0:
+            messages_to_send.append("⚙️ 【システム設定の変更】\n\n" + "\n\n".join(config_changes))
+            # 通知に載せるので、ここで追跡管理ファイルを更新
+            current_tracked = {p["code"]: p["name"] for p in TARGET_PRODUCTS}
+            save_tracked_products(current_tracked)
     
     if len(all_new_items) > 0:
         messages_to_send.append("🌟 【入荷検知】\n\n" + "\n\n".join(all_new_items))
@@ -161,17 +157,24 @@ def check_stock():
     if len(sold_out_items) > 0:
         messages_to_send.append("⚠️ 【完売・在庫切れ】\n\n" + "\n\n".join(sold_out_items))
 
-    # 在庫の変化、または設定の変更、どちらか一瞬でもあれば1通で送信
-    if len(messages_to_send) > 0:
+    # 在庫のリアルな変化（入荷・完売）があった時だけLINEが飛ぶ
+    if len(messages_to_send) > 0 and (len(all_new_items) > 0 or len(sold_out_items) > 0):
         final_msg = "\n\n============\n\n".join(messages_to_send)
         send_line_message(final_msg)
         save_history(current_history)
-        print("通知を送信しました。")
+        print("在庫変化を検知したため、設定変更と合わせて通知を送信しました。")
     else:
+        # 在庫変化がない時は、仮に商品の増減があってもLINEは送らず、ファイル同期も次回（在庫変化時）まで保留
         if old_history.keys() != current_history.keys():
             cleaned_history = {k: v for k, v in current_history.items()}
             save_history(cleaned_history)
-        print("変化はありませんでした。")
+        
+        # 初回実行時のみ基準ファイルを作成
+        if not os.path.exists(TRACKED_PRODUCTS_FILE):
+            current_tracked = {p["code"]: p["name"] for p in TARGET_PRODUCTS}
+            save_tracked_products(current_tracked)
+            
+        print("在庫に変化がないため、LINE通知はスキップしました。")
 
 if __name__ == "__main__":
     import os
@@ -190,7 +193,7 @@ if __name__ == "__main__":
                 if p_name not in summary_data:
                     summary_data[p_name] = []
                 shop_url = f"https://gashapon.jp/shop/shop.php?shop_code={info['shop_code']}"
-                summary_data[p_name].append(f"・{info['shop_title']}\n  {shop_url}")
+                summary_data[p_name].append(f"=・{info['shop_title']}\n  {shop_url}")
 
             msg_lines = ["📋 【現在の在庫一覧サマリー】\n"]
             for p_name, shops in summary_data.items():
