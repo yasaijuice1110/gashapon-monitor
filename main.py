@@ -41,7 +41,6 @@ def save_history(history):
         json.dump(history, f, indent=4, ensure_ascii=False)
 
 def load_tracked_products():
-    """前回実行時の追跡商品リストを読み込む"""
     if not os.path.exists(TRACKED_PRODUCTS_FILE):
         return {}
     with open(TRACKED_PRODUCTS_FILE, 'r', encoding='utf-8') as f:
@@ -51,7 +50,6 @@ def load_tracked_products():
             return {}
 
 def save_tracked_products(tracked):
-    """今回の追跡商品リストを保存する"""
     with open(TRACKED_PRODUCTS_FILE, 'w', encoding='utf-8') as f:
         json.dump(tracked, f, indent=4, ensure_ascii=False)
 
@@ -68,21 +66,17 @@ def send_line_message(msg):
     return requests.post(url, headers=headers, json=payload)
 
 def get_target_product_changes():
-    """TARGET_PRODUCTS の追加・削除を検知してメッセージ用の配列を返す（保存はここではしない）"""
     old_tracked = load_tracked_products()
     current_tracked = {p["code"]: p["name"] for p in TARGET_PRODUCTS}
     
     change_messages = []
-    
     if not old_tracked:
         return change_messages
     
-    # 新しく追加された商品を検知
     for code, name in current_tracked.items():
         if code not in old_tracked:
             change_messages.append(f"➕ 【対象商品に追加されました】\n・{name}")
             
-    # リストから削除された商品を検知
     for code, name in old_tracked.items():
         if code not in current_tracked:
             change_messages.append(f"➖ 【対象商品から外されました】\n・{name}")
@@ -93,7 +87,6 @@ def check_stock():
     print("全商品をチェック中...")
     old_history = load_history()
     
-    # 1. 現在在庫がある店舗のデータを収集
     current_history = {}
     product_results = {}
 
@@ -117,18 +110,17 @@ def check_stock():
         except Exception as e:
             print(f"データ取得エラー ({product['name']}): {e}")
 
-    # 2. 売り切れの判定（前回あったのに、今回消えたもの）
+    # 2. 売り切れの判定
     sold_out_items = []
     if len(old_history) > 0:
         target_codes = [p["code"] for p in TARGET_PRODUCTS]
-        
         for old_id, info in old_history.items():
             if old_id not in current_history:
                 product_code = old_id.split("_")[0]
                 if product_code in target_codes:
                     sold_out_items.append(f"❌ 【{info['product_name']}】\n・{info['shop_title']}\n ※売り切れました")
 
-    # 3. 新入荷の判定（今回あるのに、前回なかったもの）
+    # 3. 新入荷の判定
     all_new_items = []
     for unique_id, info in current_history.items():
         if unique_id not in old_history:
@@ -142,39 +134,37 @@ def check_stock():
     # 4. メッセージの構築と送信
     messages_to_send = []
     
-    # ✨ 入荷か完売が「1件以上」ある場合のみ、設定変更メッセージをチェックして合体させる
-    if len(all_new_items) > 0 or len(sold_out_items) > 0:
+    # ✨ 修正：新入荷（all_new_items）が1件以上あるときだけ、LINEを送る準備をする
+    if len(all_new_items) > 0:
         config_changes = get_target_product_changes()
         if len(config_changes) > 0:
             messages_to_send.append("⚙️ 【システム設定の変更】\n\n" + "\n\n".join(config_changes))
-            # 通知に載せるので、ここで追跡管理ファイルを更新
             current_tracked = {p["code"]: p["name"] for p in TARGET_PRODUCTS}
             save_tracked_products(current_tracked)
     
-    if len(all_new_items) > 0:
         messages_to_send.append("🌟 【入荷検知】\n\n" + "\n\n".join(all_new_items))
         
-    if len(sold_out_items) > 0:
-        messages_to_send.append("⚠️ 【完売・在庫切れ】\n\n" + "\n\n".join(sold_out_items))
+        # 入荷があったので、もし売り切れデータがあればついでにここに合体させる
+        if len(sold_out_items) > 0:
+            messages_to_send.append("⚠️ 【完売・在庫切れ】\n\n" + "\n\n".join(sold_out_items))
 
-    # 在庫のリアルな変化（入荷・完売）があった時だけLINEが飛ぶ
-    if len(messages_to_send) > 0 and (len(all_new_items) > 0 or len(sold_out_items) > 0):
+    # ✨ 最終送信判定：新入荷があった時だけLINEを送信する
+    if len(messages_to_send) > 0 and len(all_new_items) > 0:
         final_msg = "\n\n============\n\n".join(messages_to_send)
         send_line_message(final_msg)
         save_history(current_history)
-        print("在庫変化を検知したため、設定変更と合わせて通知を送信しました。")
+        print("新入荷を検知したため、売り切れ情報と合わせてLINEを送信しました。")
     else:
-        # 在庫変化がない時は、仮に商品の増減があってもLINEは送らず、ファイル同期も次回（在庫変化時）まで保留
+        # 入荷がない場合は、仮に売り切れ店舗があってもLINEは送らず、静かに履歴ファイルだけ更新する
         if old_history.keys() != current_history.keys():
             cleaned_history = {k: v for k, v in current_history.items()}
             save_history(cleaned_history)
         
-        # 初回実行時のみ基準ファイルを作成
         if not os.path.exists(TRACKED_PRODUCTS_FILE):
             current_tracked = {p["code"]: p["name"] for p in TARGET_PRODUCTS}
             save_tracked_products(current_tracked)
             
-        print("在庫に変化がないため、LINE通知はスキップしました。")
+        print("新入荷がないため、LINE通知はスキップしました（売り切れデータは裏で記録しました）。")
 
 if __name__ == "__main__":
     import os
