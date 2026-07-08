@@ -29,6 +29,7 @@ jobs:
         run: |
           git config --global user.name 'github-actions'
           git config --global user.email 'github-actions@github.com'
-          git add notified_shops.json
-          git commit -m "Update notified shops" || echo "No changes to commit"
+          # ✨ tracked_products.json も一緒に保存するように追加します
+          git add notified_shops.json tracked_products.json
+          git commit -m "Update notified shops and tracked products" || echo "No changes to commit"
           git push
