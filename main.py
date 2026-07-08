@@ -75,6 +75,11 @@ def check_target_product_changes():
     
     change_messages = []
     
+    # 初回実行時（ファイルが存在しない時）は通知せず現在の状態を記録して終わる
+    if not old_tracked:
+        save_tracked_products(current_tracked)
+        return change_messages
+    
     # 新しく追加された商品を検知
     for code, name in current_tracked.items():
         if code not in old_tracked:
@@ -85,10 +90,8 @@ def check_target_product_changes():
         if code not in current_tracked:
             change_messages.append(f"➖ 【対象商品から外されました】\n・{name}")
             
-    # 変更があった場合だけファイルを更新（メッセージはcheck_stock内で合体させる）
+    # ✨ 変更があったら即時保存（通知が重複するのを防ぐ）
     if change_messages:
-        save_tracked_products(current_tracked)
-    elif not old_tracked:
         save_tracked_products(current_tracked)
         
     return change_messages
@@ -105,7 +108,6 @@ def check_stock():
     product_results = {}
 
     for product in TARGET_PRODUCTS:
-        # 修正箇所：ちぎれていた110行目を1行に綺麗に修正しました
         payload = {"product_code": product["code"], "center_lat": "35.6812", "center_lng": "139.7671", "gplus_type": "gplus", "map_distance_flg": "false"}
         try:
             response = requests.post(API_URL, data=payload, headers=HEADERS)
