@@ -13,7 +13,6 @@ TARGET_PRODUCTS = [
     {"name": "HGドラゴンボール Another2", "code": "4582769889042"}
 ]
 
-# Discord Webhookの設定（GitHub Secretsから取得）
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 
 API_URL = "https://gashapon.jp/shop/leaflet/getShopProducts.php"
@@ -22,7 +21,6 @@ HEADERS = {
     "Referer": "https://gashapon.jp/products/detail.php?jan_code=4570118186782000"
 }
 
-# ✨ Discord専用のファイル名に変更（LINE版と衝突しないように独立）
 HISTORY_FILE = "notified_shops_discord.json"
 TRACKED_PRODUCTS_FILE = "tracked_products_discord.json"
 
@@ -55,16 +53,13 @@ def save_tracked_products(tracked):
     with open(TRACKED_PRODUCTS_FILE, 'w', encoding='utf-8') as f:
         json.dump(tracked, f, indent=4, ensure_ascii=False)
 
-# ✨ 改修：Discordの文字数制限（2000文字）を賢く回避して分割送信する関数
 def send_discord_message(msg):
     if not DISCORD_WEBHOOK_URL:
         print("エラー: DISCORD_WEBHOOK_URL が設定されていません。")
         return None
-        
     if not msg.strip():
         return None
 
-    # 安全のために1800文字ごとにメッセージを分割します
     MAX_LENGTH = 1800
     lines = msg.split("\n")
     current_chunk = []
@@ -72,20 +67,15 @@ def send_discord_message(msg):
     last_response = None
 
     for line in lines:
-        # 改行コード分（1文字）を考慮して長さを計算
         if current_length + len(line) + 1 > MAX_LENGTH:
-            # 限界を超えたらここまでの分を送信
             payload = {"content": "\n".join(current_chunk)}
             last_response = requests.post(DISCORD_WEBHOOK_URL, json=payload)
-            
-            # チャンクをリセットして現在の行からリスタート
             current_chunk = [line]
             current_length = len(line)
         else:
             current_chunk.append(line)
             current_length += len(line) + 1
 
-    # 残っている最後の塊を送信
     if current_chunk:
         payload = {"content": "\n".join(current_chunk)}
         last_response = requests.post(DISCORD_WEBHOOK_URL, json=payload)
@@ -112,11 +102,15 @@ def check_stock():
     
     current_history = {}
     product_results = {}
+    error_count = 0
 
     for product in TARGET_PRODUCTS:
         payload = {"product_code": product["code"], "center_lat": "35.6812", "center_lng": "139.7671", "gplus_type": "gplus", "map_distance_flg": "false"}
         try:
-            response = requests.post(API_URL, data=payload, headers=HEADERS)
+            # ✨ タイムアウトを180秒（3分）に設定！
+            response = requests.post(API_URL, data=payload, headers=HEADERS, timeout=180)
+            response.raise_for_status() 
+            
             data = response.json()
             shops = data.get("gplus_data", [])
             product_results[product["code"]] = shops
@@ -132,7 +126,14 @@ def check_stock():
                     }
         except Exception as e:
             print(f"データ取得エラー ({product['name']}): {e}")
+            error_count += 1
 
+    # ✨ 3分で諦めた場合やエラー時は、データを壊さないよう安全に中断
+    if error_count > 0:
+        print("⚠️ サイト停止またはタイムアウトを検知したため、処理を中断します（データを維持）。")
+        return
+
+    # 2. 売り切れの判定
     sold_out_items = []
     if len(old_history) > 0:
         target_codes = [p["code"] for p in TARGET_PRODUCTS]
@@ -142,6 +143,7 @@ def check_stock():
                 if product_code in target_codes:
                     sold_out_items.append(f"❌ 【{info['product_name']}】\n・{info['shop_title']}\n ※売り切れました")
 
+    # 3. 新入荷の判定
     all_new_items = []
     for unique_id, info in current_history.items():
         if unique_id not in old_history:
