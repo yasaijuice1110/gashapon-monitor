@@ -22,6 +22,7 @@ HEADERS = {
     "Referer": "https://gashapon.jp/products/detail.php?jan_code=4570118186782000"
 }
 HISTORY_FILE = "notified_shops.json"
+TRACKED_PRODUCTS_FILE = "tracked_products.json"  # ✨ 追跡商品の管理用ファイル
 
 def load_history():
     if not os.path.exists(HISTORY_FILE):
@@ -29,7 +30,6 @@ def load_history():
     with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
         try:
             data = json.load(f)
-            # 古いコードの仕様（リスト形式）だった場合の互換性ケア
             if isinstance(data, list):
                 return {}
             return data
@@ -39,6 +39,21 @@ def load_history():
 def save_history(history):
     with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
         json.dump(history, f, indent=4, ensure_ascii=False)
+
+def load_tracked_products():
+    """✨ 前回実行時の追跡商品リストを読み込む"""
+    if not os.path.exists(TRACKED_PRODUCTS_FILE):
+        return {}
+    with open(TRACKED_PRODUCTS_FILE, 'r', encoding='utf-8') as f:
+        try:
+            return json.load(f)
+        except:
+            return {}
+
+def save_tracked_products(tracked):
+    """✨ 今回の追跡商品リストを保存する"""
+    with open(TRACKED_PRODUCTS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(tracked, f, indent=4, ensure_ascii=False)
 
 def send_line_message(msg):
     url = "https://api.line.me/v2/bot/message/push"
@@ -52,106 +67,43 @@ def send_line_message(msg):
     }
     return requests.post(url, headers=headers, json=payload)
 
+def check_target_product_changes():
+    """✨ TARGET_PRODUCTS の追加・削除を検知してLINEに通知する"""
+    old_tracked = load_tracked_products()  # {"code": "name"} の辞書
+    current_tracked = {p["code"]: p["name"] for p in TARGET_PRODUCTS}
+    
+    config_messages = []
+    
+    # 新しく追加された商品を検知
+    for code, name in current_tracked.items():
+        if code not in old_tracked:
+            config_messages.append(f"➕ 【対象商品に追加されました】\n・{name}\n(JAN: {code})")
+            
+    # リストから削除された商品を検知
+    for code, name in old_tracked.items():
+        if code not in current_tracked:
+            config_messages.append(f"➖ 【対象商品から外されました】\n・{name}\n(JAN: {code})")
+            
+    if config_messages:
+        # 変更があればLINEに通知し、管理ファイルを更新
+        change_msg = "⚙️ 【システム設定の変更】\n\n" + "\n\n============\n\n".join(config_messages)
+        send_line_message(change_msg)
+        save_tracked_products(current_tracked)
+        print("商品の追加/削除を検知して通知しました。")
+    elif not old_tracked:
+        # 初回実行時のみ、通知はせずファイルだけ作る
+        save_tracked_products(current_tracked)
+
 def check_stock():
+    # ✨ まず商品の追加・削除がないかチェック
+    check_target_product_changes()
+
     print("全商品をチェック中...")
-    old_history = load_history()  # 辞書形式で取得 {"商品コード_店舗ID": {"product_name": "...", "shop_title": "..."}}
+    old_history = load_history()
     
     # 1. 現在在庫がある店舗のデータを収集
     current_history = {}
     product_results = {}
 
     for product in TARGET_PRODUCTS:
-        payload = {"product_code": product["code"], "center_lat": "35.6812", "center_lng": "139.7671", "gplus_type": "gplus", "map_distance_flg": "false"}
-        try:
-            response = requests.post(API_URL, data=payload, headers=HEADERS)
-            data = response.json()
-            shops = data.get("gplus_data", [])
-            product_results[product["code"]] = shops
-            
-            for shop in shops:
-                if shop.get("shop_pref_code") in ["13", "12"]:
-                    unique_id = f"{product['code']}_{shop['id']}"
-                    # 現在の在庫情報を記憶
-                    current_history[unique_id] = {
-                        "product_name": product["name"],
-                        "shop_title": shop["shop_title"],
-                        "shop_address": shop.get("shop_address", ""),
-                        "shop_code": shop.get("shop_code", "")
-                    }
-        except Exception as e:
-            print(f"データ取得エラー ({product['name']}): {e}")
-
-    # 2. 売り切れの判定（前回あったのに、今回消えたもの）
-    sold_out_items = []
-    if len(old_history) > 0:
-        for old_id, info in old_history.items():
-            if old_id not in current_history:
-                sold_out_items.append(f"❌ 【{info['product_name']}】\n・{info['shop_title']}\n ※売り切れました")
-
-    # 3. 新入荷の判定（今回あるのに、前回なかったもの）
-    all_new_items = []
-    for unique_id, info in current_history.items():
-        if unique_id not in old_history:
-            shop_url = f"https://gashapon.jp/shop/shop.php?shop_code={info['shop_code']}"
-            item_msg = f"🔔 【{info['product_name']}】\n・{info['shop_title']}\n  住所: {info['shop_address']}\n  URL: {shop_url}"
-            all_new_items.append(item_msg)
-
-    # 4. メッセージの構築と送信
-    messages_to_send = []
-    
-    if len(all_new_items) > 0:
-        messages_to_send.append("🌟 【入荷検知】\n\n" + "\n\n".join(all_new_items))
-        
-    if len(sold_out_items) > 0:
-        messages_to_send.append("⚠️ 【完売・在庫切れ】\n\n" + "\n\n".join(sold_out_items))
-
-    if len(messages_to_send) > 0:
-        final_msg = "\n\n============\n\n".join(messages_to_send)
-        send_line_message(final_msg)
-        save_history(current_history)  # 最新の在庫状況（名前付き）で上書き保存
-        print(f"通知を送信しました。（入荷: {len(all_new_items)}件 / 完売: {len(sold_out_items)}件）")
-    else:
-        # 通知がなくても、在庫が減ってデータに変化があった場合は保存ファイルを更新
-        if old_history.keys() != current_history.keys():
-            save_history(current_history)
-        print("変化はありませんでした。")
-
-# main.py の最下部をこのように修正
-
-if __name__ == "__main__":
-    import os
-    # GitHub Actionsの環境変数からモードを取得
-    mode = os.environ.get("RUN_MODE", "check")
-
-    if mode == "summary":
-        print("【サマリーモード】現在の全在庫を出力します...")
-        current_history = load_history()
-        
-        if not current_history:
-            send_line_message("現在、在庫がある店舗はありません。")
-        else:
-            # 商品ごとにデータを整理
-            summary_data = {}
-            for unique_id, info in current_history.items():
-                p_name = info["product_name"]
-                if p_name not in summary_data:
-                    summary_data[p_name] = []
-                shop_url = f"https://gashapon.jp/shop/shop.php?shop_code={info['shop_code']}"
-                summary_data[p_name].append(f"・{info['shop_title']}\n  {shop_url}")
-
-            # メッセージ構築
-            msg_lines = ["📋 【現在の在庫一覧サマリー】\n"]
-            for p_name, shops in summary_data.items():
-                msg_lines.append(f"📦 【{p_name}】")
-                msg_lines.extend(shops)
-                msg_lines.append("")
-
-            final_msg = "\n".join(msg_lines).strip()
-            if len(final_msg) > 4500:
-                final_msg = final_msg[:4500] + "\n\n※文字数制限のため省略"
-            
-            send_line_message(final_msg)
-            print("サマリーを送信しました。")
-    else:
-        # 通常の定期実行（変化チェック）
-        check_stock()
+        payload = {"product_code": product["code"], "center_lat": "35.6812", "
