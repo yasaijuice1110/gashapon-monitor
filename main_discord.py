@@ -13,7 +13,7 @@ TARGET_PRODUCTS = [
     {"name": "HGドラゴンボール Another2", "code": "4582769889042"}
 ]
 
-# ✨ Discord Webhookの設定（GitHub Secretsから取得）
+# Discord Webhookの設定（GitHub Secretsから取得）
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 
 API_URL = "https://gashapon.jp/shop/leaflet/getShopProducts.php"
@@ -21,8 +21,10 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/126.0.0.0",
     "Referer": "https://gashapon.jp/products/detail.php?jan_code=4570118186782000"
 }
-HISTORY_FILE = "notified_shops.json"
-TRACKED_PRODUCTS_FILE = "tracked_products.json"
+
+# ✨ Discord専用のファイル名に変更（LINE版と衝突しないように独立）
+HISTORY_FILE = "notified_shops_discord.json"
+TRACKED_PRODUCTS_FILE = "tracked_products_discord.json"
 
 def load_history():
     if not os.path.exists(HISTORY_FILE):
@@ -58,7 +60,6 @@ def send_discord_message(msg):
         print("エラー: DISCORD_WEBHOOK_URL が設定されていません。")
         return None
         
-    # Discordの2000文字制限対策
     if len(msg) > 1900:
         msg = msg[:1900] + "\n\n...文字数制限のため省略"
         
@@ -80,7 +81,7 @@ def get_target_product_changes():
     return change_messages
 
 def check_stock():
-    print("全商品をチェック中...")
+    print("【Discord版】全商品をチェック中...")
     old_history = load_history()
     
     current_history = {}
@@ -127,7 +128,6 @@ def check_stock():
 
     messages_to_send = []
     
-    # 入荷か完売がある場合のみ、設定変更を合体させる（超節約ロジック）
     if len(all_new_items) > 0 or len(sold_out_items) > 0:
         config_changes = get_target_product_changes()
         if len(config_changes) > 0:
@@ -141,7 +141,6 @@ def check_stock():
     if len(sold_out_items) > 0:
         messages_to_send.append("⚠️ 【完売・在庫切れ】\n\n" + "\n\n".join(sold_out_items))
 
-    # 在庫の動き（入荷・完売）があった時だけDiscordへ送信
     if len(messages_to_send) > 0 and (len(all_new_items) > 0 or len(sold_out_items) > 0):
         final_msg = "\n\n============\n\n".join(messages_to_send)
         send_discord_message(final_msg)
