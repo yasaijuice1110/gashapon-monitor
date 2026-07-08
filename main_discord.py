@@ -55,16 +55,42 @@ def save_tracked_products(tracked):
     with open(TRACKED_PRODUCTS_FILE, 'w', encoding='utf-8') as f:
         json.dump(tracked, f, indent=4, ensure_ascii=False)
 
+# ✨ 改修：Discordの文字数制限（2000文字）を賢く回避して分割送信する関数
 def send_discord_message(msg):
     if not DISCORD_WEBHOOK_URL:
         print("エラー: DISCORD_WEBHOOK_URL が設定されていません。")
         return None
         
-    if len(msg) > 1900:
-        msg = msg[:1900] + "\n\n...文字数制限のため省略"
-        
-    payload = {"content": msg}
-    return requests.post(DISCORD_WEBHOOK_URL, json=payload)
+    if not msg.strip():
+        return None
+
+    # 安全のために1800文字ごとにメッセージを分割します
+    MAX_LENGTH = 1800
+    lines = msg.split("\n")
+    current_chunk = []
+    current_length = 0
+    last_response = None
+
+    for line in lines:
+        # 改行コード分（1文字）を考慮して長さを計算
+        if current_length + len(line) + 1 > MAX_LENGTH:
+            # 限界を超えたらここまでの分を送信
+            payload = {"content": "\n".join(current_chunk)}
+            last_response = requests.post(DISCORD_WEBHOOK_URL, json=payload)
+            
+            # チャンクをリセットして現在の行からリスタート
+            current_chunk = [line]
+            current_length = len(line)
+        else:
+            current_chunk.append(line)
+            current_length += len(line) + 1
+
+    # 残っている最後の塊を送信
+    if current_chunk:
+        payload = {"content": "\n".join(current_chunk)}
+        last_response = requests.post(DISCORD_WEBHOOK_URL, json=payload)
+
+    return last_response
 
 def get_target_product_changes():
     old_tracked = load_tracked_products()
