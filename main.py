@@ -22,7 +22,7 @@ HEADERS = {
     "Referer": "https://gashapon.jp/products/detail.php?jan_code=4570118186782000"
 }
 HISTORY_FILE = "notified_shops.json"
-TRACKED_PRODUCTS_FILE = "tracked_products.json"  # 追跡商品の管理用ファイル
+TRACKED_PRODUCTS_FILE = "tracked_products.json"
 
 def load_history():
     if not os.path.exists(HISTORY_FILE):
@@ -68,19 +68,15 @@ def send_line_message(msg):
 def get_target_product_changes():
     old_tracked = load_tracked_products()
     current_tracked = {p["code"]: p["name"] for p in TARGET_PRODUCTS}
-    
     change_messages = []
     if not old_tracked:
         return change_messages
-    
     for code, name in current_tracked.items():
         if code not in old_tracked:
             change_messages.append(f"➕ 【対象商品に追加されました】\n・{name}")
-            
     for code, name in old_tracked.items():
         if code not in current_tracked:
             change_messages.append(f"➖ 【対象商品から外されました】\n・{name}")
-            
     return change_messages
 
 def check_stock():
@@ -89,11 +85,16 @@ def check_stock():
     
     current_history = {}
     product_results = {}
+    
+    # ✨ サイト停止対策：エラーカウンター
+    error_count = 0
 
     for product in TARGET_PRODUCTS:
         payload = {"product_code": product["code"], "center_lat": "35.6812", "center_lng": "139.7671", "gplus_type": "gplus", "map_distance_flg": "false"}
         try:
             response = requests.post(API_URL, data=payload, headers=HEADERS, timeout=180)
+            response.raise_for_status()  # 💡 サイト落ちのエラーを検知
+            
             data = response.json()
             shops = data.get("gplus_data", [])
             product_results[product["code"]] = shops
@@ -109,6 +110,12 @@ def check_stock():
                     }
         except Exception as e:
             print(f"データ取得エラー ({product['name']}): {e}")
+            error_count += 1
+
+    # ✨ サイト停止対策：エラーが1件でもあれば誤通知を防ぐためここで安全に終了
+    if error_count > 0:
+        print("⚠️ サイトが落ちている可能性があるため、処理を中断して終了します（前回のデータを維持）。")
+        return
 
     # 2. 売り切れの判定
     sold_out_items = []
@@ -134,7 +141,7 @@ def check_stock():
     # 4. メッセージの構築と送信
     messages_to_send = []
     
-    # ✨ 修正：新入荷（all_new_items）が1件以上あるときだけ、LINEを送る準備をする
+    # 新入荷があるときだけ通知構築
     if len(all_new_items) > 0:
         config_changes = get_target_product_changes()
         if len(config_changes) > 0:
@@ -144,27 +151,23 @@ def check_stock():
     
         messages_to_send.append("🌟 【入荷検知】\n\n" + "\n\n".join(all_new_items))
         
-        # 入荷があったので、もし売り切れデータがあればついでにここに合体させる
         if len(sold_out_items) > 0:
-            messages_to_send.append("⚠️ 【完売・在庫切れ】\n\n" + "\n\n".join(sold_out_items))
+            messages_to_send.append("⚠️ 【完完売・在庫切れ】\n\n" + "\n\n".join(sold_out_items))
 
-    # ✨ 最終送信判定：新入荷があった時だけLINEを送信する
+    # 新入荷があった時だけLINEを送信する
     if len(messages_to_send) > 0 and len(all_new_items) > 0:
         final_msg = "\n\n============\n\n".join(messages_to_send)
         send_line_message(final_msg)
         save_history(current_history)
         print("新入荷を検知したため、売り切れ情報と合わせてLINEを送信しました。")
     else:
-        # 入荷がない場合は、仮に売り切れ店舗があってもLINEは送らず、静かに履歴ファイルだけ更新する
         if old_history.keys() != current_history.keys():
             cleaned_history = {k: v for k, v in current_history.items()}
             save_history(cleaned_history)
-        
         if not os.path.exists(TRACKED_PRODUCTS_FILE):
             current_tracked = {p["code"]: p["name"] for p in TARGET_PRODUCTS}
             save_tracked_products(current_tracked)
-            
-        print("新入荷がないため、LINE通知はスキップしました（売り切れデータは裏で記録しました）。")
+        print("新入荷がないため、LINE通知はスキップしました（売り切れデータは裏で記録）。")
 
 if __name__ == "__main__":
     import os
