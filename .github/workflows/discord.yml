@@ -1,8 +1,6 @@
 name: Discord Gashapon Stock Checker
 
 on:
-  schedule:
-    - cron: '15 * * * *' # 毎時15分に実行（LINEと実行時間がズレるので安全です）
   workflow_dispatch:
 
 jobs:
