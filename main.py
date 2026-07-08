@@ -85,15 +85,14 @@ def check_stock():
     
     current_history = {}
     product_results = {}
-    
-    # ✨ サイト停止対策：エラーカウンター
     error_count = 0
 
     for product in TARGET_PRODUCTS:
         payload = {"product_code": product["code"], "center_lat": "35.6812", "center_lng": "139.7671", "gplus_type": "gplus", "map_distance_flg": "false"}
         try:
+            # ✨ タイムアウトを180秒（3分）に設定！
             response = requests.post(API_URL, data=payload, headers=HEADERS, timeout=180)
-            response.raise_for_status()  # 💡 サイト落ちのエラーを検知
+            response.raise_for_status() 
             
             data = response.json()
             shops = data.get("gplus_data", [])
@@ -112,9 +111,9 @@ def check_stock():
             print(f"データ取得エラー ({product['name']}): {e}")
             error_count += 1
 
-    # ✨ サイト停止対策：エラーが1件でもあれば誤通知を防ぐためここで安全に終了
+    # ✨ 3分で諦めた場合やエラー時は、データを壊さないよう安全に中断
     if error_count > 0:
-        print("⚠️ サイトが落ちている可能性があるため、処理を中断して終了します（前回のデータを維持）。")
+        print("⚠️ サイト停止またはタイムアウトを検知したため、処理を中断します（データを維持）。")
         return
 
     # 2. 売り切れの判定
@@ -141,25 +140,26 @@ def check_stock():
     # 4. メッセージの構築と送信
     messages_to_send = []
     
-    # 新入荷があるときだけ通知構築
-    if len(all_new_items) > 0:
+    # ✨ 戻しました：入荷、または完売が1件でもあれば通知を作る
+    if len(all_new_items) > 0 or len(sold_out_items) > 0:
         config_changes = get_target_product_changes()
         if len(config_changes) > 0:
             messages_to_send.append("⚙️ 【システム設定の変更】\n\n" + "\n\n".join(config_changes))
             current_tracked = {p["code"]: p["name"] for p in TARGET_PRODUCTS}
             save_tracked_products(current_tracked)
     
+    if len(all_new_items) > 0:
         messages_to_send.append("🌟 【入荷検知】\n\n" + "\n\n".join(all_new_items))
         
-        if len(sold_out_items) > 0:
-            messages_to_send.append("⚠️ 【完完売・在庫切れ】\n\n" + "\n\n".join(sold_out_items))
+    if len(sold_out_items) > 0:
+        messages_to_send.append("⚠️ 【完売・在庫切れ】\n\n" + "\n\n".join(sold_out_items))
 
-    # 新入荷があった時だけLINEを送信する
-    if len(messages_to_send) > 0 and len(all_new_items) > 0:
+    # ✨ 戻しました：入荷・完売どちらが起きてもLINEを送る
+    if len(messages_to_send) > 0 and (len(all_new_items) > 0 or len(sold_out_items) > 0):
         final_msg = "\n\n============\n\n".join(messages_to_send)
         send_line_message(final_msg)
         save_history(current_history)
-        print("新入荷を検知したため、売り切れ情報と合わせてLINEを送信しました。")
+        print("在庫変化（入荷または完売）を検知したため、LINEを送信しました。")
     else:
         if old_history.keys() != current_history.keys():
             cleaned_history = {k: v for k, v in current_history.items()}
@@ -167,16 +167,16 @@ def check_stock():
         if not os.path.exists(TRACKED_PRODUCTS_FILE):
             current_tracked = {p["code"]: p["name"] for p in TARGET_PRODUCTS}
             save_tracked_products(current_tracked)
-        print("新入荷がないため、LINE通知はスキップしました（売り切れデータは裏で記録）。")
+        print("変化はありませんでした。")
 
 if __name__ == "__main__":
     import os
     mode = os.environ.get("RUN_MODE", "check")
 
     if mode == "summary":
+        # (サマリーモードのコードは変更ないためそのまま維持)
         print("【サマリーモード】現在の全在庫を出力します...")
         current_history = load_history()
-        
         if not current_history:
             send_line_message("現在、在庫がある店舗はありません。")
         else:
@@ -187,17 +187,14 @@ if __name__ == "__main__":
                     summary_data[p_name] = []
                 shop_url = f"https://gashapon.jp/shop/shop.php?shop_code={info['shop_code']}"
                 summary_data[p_name].append(f"=・{info['shop_title']}\n  {shop_url}")
-
             msg_lines = ["📋 【現在の在庫一覧サマリー】\n"]
             for p_name, shops in summary_data.items():
                 msg_lines.append(f"📦 【{p_name}】")
                 msg_lines.extend(shops)
                 msg_lines.append("")
-
             final_msg = "\n".join(msg_lines).strip()
             if len(final_msg) > 4500:
                 final_msg = final_msg[:4500] + "\n\n※文字数制限のため省略"
-            
             send_line_message(final_msg)
             print("サマリーを送信しました。")
     else:
