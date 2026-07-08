@@ -2,7 +2,7 @@ name: Discord Gashapon Stock Checker
 
 on:
   schedule:
-    - cron: '15 * * * *' # ✨LINEと実行時間をずらして、1時間に1回（毎時15分）実行
+    - cron: '15 * * * *' # 毎時15分に実行（LINEと実行時間がズレるので安全です）
   workflow_dispatch:
 
 jobs:
@@ -23,14 +23,14 @@ jobs:
 
     - name: Run script
       env:
-        # ✨今までのリポジトリのSettings -> Secretsに「DISCORD_WEBHOOK_URL」を追加しておいてください
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-      run: python main_discord.py # ✨新しく作ったDiscord用のファイルを動かす
+      run: python main_discord.py
 
     - name: Commit and push changes
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git pull origin main # 競合を防ぐために最新の状態を取り込む
-        git add notified_shops.json tracked_products.json
-        git diff --quiet && git diff --staged --quiet || (git commit -m "Update history (Discord)" && git push origin HEAD:main)
+        git pull origin main # 最新のコード・LINE側の履歴ファイルを一旦引っ張る
+        # ✨ Discord専用のファイルだけをステージングしてコミットします
+        git add notified_shops_discord.json tracked_products_discord.json
+        git diff --quiet && git diff --staged --quiet || (git commit -m "Update Discord history" && git push origin HEAD:main)
