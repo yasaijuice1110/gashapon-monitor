@@ -107,7 +107,7 @@ def check_stock():
     for product in TARGET_PRODUCTS:
         payload = {"product_code": product["code"], "center_lat": "35.6812", "center_lng": "139.7671", "gplus_type": "gplus", "map_distance_flg": "false"}
         try:
-            # ✨ タイムアウトを180秒（3分）に設定！
+            # ✨ タイムアウトを180秒（3分）に設定
             response = requests.post(API_URL, data=payload, headers=HEADERS, timeout=180)
             response.raise_for_status() 
             
@@ -183,5 +183,35 @@ def check_stock():
             save_tracked_products(current_tracked)
         print("変化はありませんでした。")
 
+# ✨ サマリーモード（Discord完全対応版）を追加
 if __name__ == "__main__":
-    check_stock()
+    import os
+    mode = os.environ.get("RUN_MODE", "check")
+
+    if mode == "summary":
+        print("【サマリーモード】現在の全在庫をDiscordに出力します...")
+        current_history = load_history()
+        
+        if not current_history:
+            send_discord_message("現在、在庫がある店舗はありません。")
+        else:
+            summary_data = {}
+            for unique_id, info in current_history.items():
+                p_name = info["product_name"]
+                if p_name not in summary_data:
+                    summary_data[p_name] = []
+                shop_url = f"https://gashapon.jp/shop/shop.php?shop_code={info['shop_code']}"
+                summary_data[p_name].append(f"=・{info['shop_title']}\n  {shop_url}")
+
+            msg_lines = ["📋 【現在の在庫一覧サマリー】\n"]
+            for p_name, shops in summary_data.items():
+                msg_lines.append(f"📦 【{p_name}】")
+                msg_lines.extend(shops)
+                msg_lines.append("")
+
+            final_msg = "\n".join(msg_lines).strip()
+            # Discordの文字数制限に合わせた分割処理を呼び出す
+            send_discord_message(final_msg)
+            print("サマリーを送信しました。")
+    else:
+        check_stock()
