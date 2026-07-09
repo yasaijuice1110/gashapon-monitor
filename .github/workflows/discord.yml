@@ -2,6 +2,12 @@ name: Discord Gashapon Stock Checker
 
 on:
   workflow_dispatch:
+    # ✨ GASからの「サマリーモード」などの切り替え命令を受け取れるようにします
+    inputs:
+      mode:
+        description: 'Execution mode'
+        required: false
+        default: 'check'
 
 jobs:
   build:
@@ -13,7 +19,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.10'
+        python-version: '3.12' # 最新のPythonに合わせておきます
 
     - name: Install dependencies
       run: |
@@ -22,16 +28,26 @@ jobs:
     - name: Run script
       env:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        # ✨ GASから送られてきた「mode」をPythonプログラムに引き渡します
+        RUN_MODE: ${{ github.event.inputs.mode }}
       run: python main_discord.py
 
     - name: Commit and push changes
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git pull origin main
         
-        # ✨ ファイルが存在する場合のみ、個別に git add するように変更します
+        # ✨ ファイルが存在する場合のみ、個別に git add する安全な書き方を維持
         if [ -f notified_shops_discord.json ]; then git add notified_shops_discord.json; fi
         if [ -f tracked_products_discord.json ]; then git add tracked_products_discord.json; fi
         
-        git diff --quiet && git diff --staged --quiet || (git commit -m "Update Discord history" && git push origin HEAD:main)
+        # 変更がある場合のみコミット
+        git diff --quiet && git diff --staged --quiet || git commit -m "Update Discord history"
+        
+        # ✨ 鉄壁の衝突回避ループ
+        # LINE版と同時にプッシュして弾かれても、自動で合体（リベース）して最大5回まで再トライします！
+        for i in {1..5}; do
+          git pull --rebase origin main && git push origin HEAD:main && break
+          echo "LINE版とのデータ衝突を検知しました。3秒後に自動で再試行します..."
+          sleep 3
+        done
