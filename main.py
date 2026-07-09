@@ -12,7 +12,7 @@ TARGET_PRODUCTS = [
     {"name": "シュガーバニーズ ふわふわめじるしアクセサリー", "code": "4570118184573"}
 ]
 
-# LINE設定（あなたのSecretsの名前に完全に合わせました）
+# LINE設定
 LINE_TOKEN_TOKYO = os.environ.get("LINE_TOKEN_TOKYO")
 GROUP_ID_TOKYO = os.environ.get("GROUP_ID_TOKYO")
 LINE_TOKEN_CHIBA = os.environ.get("LINE_TOKEN_CHIBA")
@@ -153,8 +153,9 @@ def check_stock():
         send_line_chiba("\n\n============\n\n".join(chiba_messages))
         print("千葉の在庫変化を検知、千葉LINEに送信しました。")
 
-    if old_history.keys() != current_history.keys():
-        save_history(current_history)
+    # ✨ 修正箇所：チェックが走ったら毎回確実に都道府県コード(12, 13)入りデータで保存する
+    save_history(current_history)
+    
     if not os.path.exists(TRACKED_PRODUCTS_FILE):
         current_tracked = {p["code"]: p["name"] for p in TARGET_PRODUCTS}
         save_tracked_products(current_tracked)
