@@ -32,4 +32,12 @@ jobs:
           # ✨ tracked_products.json も一緒に保存するように追加します
           git add notified_shops.json tracked_products.json
           git commit -m "Update notified shops and tracked products" || echo "No changes to commit"
-          git push
+          
+          # ✨ 修正：もしDiscord版と同時に動いて衝突しそうになっても、
+          # 自動で最新の変更を引き込んで合体（リベース）させてから安全にプッシュします。
+          # これを最大5回、成功するまで繰り返します。
+          for i in {1..5}; do
+            git pull --rebase origin main && git push && break
+            echo "衝突を検知したため、3秒後に再試行します..."
+            sleep 3
+          done
